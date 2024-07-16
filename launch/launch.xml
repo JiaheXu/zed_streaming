@@ -1,0 +1,15 @@
+<launch>
+  <arg name="system_id"   default="$(env MMPUG_SYSTEM_ID mt002)" />
+  <arg name="system_type"   default="$(env MMPUG_SYSTEM_TYPE rc)" />
+  <arg name="sensor_payload_index" default="$(env SENSOR_PAYLOAD_INDEX 5)" />
+  <arg name="sensor_index" default="$(env DTC_SENSOR_PAYLOAD_INDEX 5)" />
+
+
+  <group>
+    <push-ros-namespace namespace="$(var system_id)" />
+    <node pkg="autonomy_executive" exec="local_joystick_command" name="joystick_cmd_node" output="screen">
+    <param name="sensor_index" value="$(var sensor_index)" type="str" />
+    </node>
+  </group>
+</launch>
+
