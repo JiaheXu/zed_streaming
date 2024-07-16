@@ -1,14 +1,13 @@
 <launch>
-  <arg name="system_id"   default="$(env MMPUG_SYSTEM_ID mt002)" />
-  <arg name="system_type"   default="$(env MMPUG_SYSTEM_TYPE rc)" />
-  <arg name="sensor_payload_index" default="$(env SENSOR_PAYLOAD_INDEX 5)" />
-  <arg name="sensor_index" default="$(env DTC_SENSOR_PAYLOAD_INDEX 5)" />
+  <arg name="camera_id"   default="camera_1" />
+  <arg name="ip_address"   default="10.3.1.4:30000" />
+
 
 
   <group>
-    <push-ros-namespace namespace="$(var system_id)" />
-    <node pkg="autonomy_executive" exec="local_joystick_command" name="joystick_cmd_node" output="screen">
-    <param name="sensor_index" value="$(var sensor_index)" type="str" />
+    <push-ros-namespace namespace="$(var camera_id)" />
+    <node pkg="zed_streaming" exec="zed_streaming" name="zed_streaming_node1" output="screen">
+    <param name="ip_address" value="$(var ip_address)" type="str" />
     </node>
   </group>
 </launch>
