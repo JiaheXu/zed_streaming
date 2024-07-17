@@ -161,8 +161,6 @@ class zed_streamer(Node):
     
     def __init__(self):
         super().__init__('zed_stream_to_ros_node')
-        
- 
 
         self.declare_parameter('ip_address', '192.168.0.34:3000')
         self.ip_address = self.get_parameter('ip_address').get_parameter_value().string_value
@@ -170,16 +168,6 @@ class zed_streamer(Node):
         self.image_pub = self.create_publisher(Image, "left_image", 1)
         # self.image_pub = self.create_publisher(String, "left_image", 1)
         self.depth_pub = self.create_publisher(Image, "depth", 1)
-        timer_period = 0.5  # seconds
-        self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.i = 0
-
-    def timer_callback(self):
-        msg = String()
-        msg.data = 'Hello World: %d' % self.i
-        self.image_pub.publish(msg)
-        self.get_logger().info('Publishing: "%s"' % msg.data)
-        self.i += 1
 
     def run(self):
         init_parameters = sl.InitParameters()
@@ -197,8 +185,8 @@ class zed_streamer(Node):
         mat = sl.Mat()
         depth_mat = sl.Mat()
         
-        cv2.namedWindow(win_name)
-        cv2.setMouseCallback(win_name,on_mouse)
+        # cv2.namedWindow(win_name)
+        # cv2.setMouseCallback(win_name,on_mouse)
         print_camera_information(cam)
         print_help()
         switch_camera_settings()
@@ -210,14 +198,14 @@ class zed_streamer(Node):
             err = cam.grab(runtime) #Check that a new image is successfully acquired
             if err == sl.ERROR_CODE.SUCCESS:
                 cam.retrieve_image(mat, sl.VIEW.LEFT) #Retrieve left image
-                cam.retrieve_image(depth_mat, sl.VIEW.DEPTH) #Retrieve left image
                 timestamp = cam.get_timestamp(sl.TIME_REFERENCE.IMAGE)
                 cvImage = mat.get_data()
                 cvImage = cvImage[:,:,:3]
-
-                depthImage = mat.get_data()
                 img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="rgb8")
                 
+                
+                cam.retrieve_image(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
+                depthImage = mat.get_data()
                 depth_msg = bridge.cv2_to_imgmsg(depthImage)
 
                 img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
@@ -238,7 +226,7 @@ class zed_streamer(Node):
 
          
 
-        cv2.destroyAllWindows()
+        # cv2.destroyAllWindows()
 
         cam.close()
         
