@@ -193,7 +193,10 @@ class zed_streamer(Node):
             exit()
         runtime = sl.RuntimeParameters()
         win_name = "Camera Remote Control"
+        
         mat = sl.Mat()
+        depth_mat = sl.Mat()
+        
         cv2.namedWindow(win_name)
         cv2.setMouseCallback(win_name,on_mouse)
         print_camera_information(cam)
@@ -207,25 +210,26 @@ class zed_streamer(Node):
             err = cam.grab(runtime) #Check that a new image is successfully acquired
             if err == sl.ERROR_CODE.SUCCESS:
                 cam.retrieve_image(mat, sl.VIEW.LEFT) #Retrieve left image
+                cam.retrieve_image(depth_mat, sl.VIEW.DEPTH) #Retrieve left image
                 timestamp = cam.get_timestamp(sl.TIME_REFERENCE.IMAGE)
-                print("nano time: ", timestamp.get_nanoseconds())
-                print("timestamp: ", timestamp.get_seconds(), timestamp.get_nanoseconds()%1000000000)
                 cvImage = mat.get_data()
                 cvImage = cvImage[:,:,:3]
 
-                # print("shape: ",cvImage.shape)
-                # img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="rgb8")
-   
-                # msg = String()
-                # msg.data = 'Hello World' 
-                # img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
+                depthImage = mat.get_data()
+                img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="rgb8")
+                
+                depth_msg = bridge.cv2_to_imgmsg(depthImage)
+
+                img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
+                depth_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
 
                 # print("ros2 time: ", img_msg.header.stamp)
-                self.image_pub.publish(bridge.cv2_to_imgmsg(cvImage, "bgr8"))
+                self.image_pub.publish(img_msg)
+                self.depth_pub.publish(depth_msg)
 
                 if (not selection_rect.is_empty() and selection_rect.is_contained(sl.Rect(0,0,cvImage.shape[1],cvImage.shape[0]))):
                     cv2.rectangle(cvImage,(selection_rect.x,selection_rect.y),(selection_rect.width+selection_rect.x,selection_rect.height+selection_rect.y),(220, 180, 20), 2)
-                cv2.imshow(win_name, cvImage)
+                # cv2.imshow(win_name, cvImage)
             else:
                 print("Error during capture : ", err)
                 break
