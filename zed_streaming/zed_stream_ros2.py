@@ -204,7 +204,7 @@ class zed_streamer(Node):
                 img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="rgb8")
                 
                 
-                cam.retrieve_image(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
+                cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
                 depthImage = mat.get_data()
                 depth_msg = bridge.cv2_to_imgmsg(depthImage)
 
