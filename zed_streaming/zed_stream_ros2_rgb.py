@@ -171,7 +171,7 @@ class zed_streamer(Node):
 
     def run(self):
         init_parameters = sl.InitParameters()
-        init_parameters.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
+        init_parameters.depth_mode = sl.DEPTH_MODE.NONE
         init_parameters.sdk_verbose = 1
         init_parameters.set_from_stream( self.ip_address.split(':')[0],int(  self.ip_address.split(':')[1]))
         cam = sl.Camera()
@@ -201,19 +201,19 @@ class zed_streamer(Node):
                 timestamp = cam.get_timestamp(sl.TIME_REFERENCE.IMAGE)
                 cvImage = mat.get_data()
                 cvImage = cvImage[:,:,:3]
-                img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="rgb8")
+                img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="bgr8")
                 
                 
-                cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
-                depthImage = mat.get_data()
-                depth_msg = bridge.cv2_to_imgmsg(depthImage)
+                # cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
+                # depthImage = mat.get_data()
+                # depth_msg = bridge.cv2_to_imgmsg(depthImage)
 
                 img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
-                depth_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
+                # depth_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
 
                 # print("ros2 time: ", img_msg.header.stamp)
                 self.image_pub.publish(img_msg)
-                self.depth_pub.publish(depth_msg)
+                # self.depth_pub.publish(depth_msg)
 
                 if (not selection_rect.is_empty() and selection_rect.is_contained(sl.Rect(0,0,cvImage.shape[1],cvImage.shape[0]))):
                     cv2.rectangle(cvImage,(selection_rect.x,selection_rect.y),(selection_rect.width+selection_rect.x,selection_rect.height+selection_rect.y),(220, 180, 20), 2)

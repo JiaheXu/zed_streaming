@@ -1,0 +1,14 @@
+<launch>
+  <arg name="camera_id"   default="camera_1" />
+  <arg name="ip_address"   default="10.3.1.4:30000" />
+
+
+
+  <group>
+    <push-ros-namespace namespace="$(var camera_id)" />
+    <node pkg="zed_streaming" exec="zed_streaming_rgbd" name="zed_streaming_node1" output="screen">
+    <param name="ip_address" value="$(var ip_address)" type="str" />
+    </node>
+  </group>
+</launch>
+
