@@ -216,7 +216,7 @@ class zed_streamer(Node):
                 print("depth_value: ", depth_value.shape)
 
                 current_data = {}
-                current_data['rgb'] = cvImage
+                current_data['bgr'] = cvImage
                 current_data['depth'] = depth_value
 
                 current_stack.append(current_data)
