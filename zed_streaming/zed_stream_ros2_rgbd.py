@@ -18,6 +18,7 @@ import pyzed.sl as sl
 import cv2
 import argparse
 import socket 
+import numpy as np
 
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
@@ -172,7 +173,7 @@ class zed_streamer(Node):
     def run(self):
         init_parameters = sl.InitParameters()
         init_parameters.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
-        init_parameters.coordinate_units = UNIT::METER
+        init_parameters.coordinate_units = sl.UNIT.MILLIMETER
         init_parameters.depth_maximum_distance = 2.0
         init_parameters.depth_minimum_distance = 0.3
         init_parameters.sdk_verbose = 1
@@ -208,8 +209,7 @@ class zed_streamer(Node):
                 
                 
                 cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
-                depthImage = mat.get_data()
-                depth_value = depth_map.get_value(x, y)
+                depth_value = depth_mat.get_data().astype(np.uint16)
                 depth_msg = bridge.cv2_to_imgmsg(depth_value)
 
                 img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
