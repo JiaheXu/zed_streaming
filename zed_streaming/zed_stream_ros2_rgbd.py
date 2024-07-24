@@ -187,7 +187,8 @@ class zed_streamer(Node):
         win_name = "Camera Remote Control"
         
         mat = sl.Mat()
-        depth_mat = sl.Mat()
+        depth_mat = sl.Mat(1080, 1920, sl.MAT_TYPE.U16_C1, sl.MEM.CPU)
+
         
         # cv2.namedWindow(win_name)
         # cv2.setMouseCallback(win_name,on_mouse)
@@ -208,9 +209,11 @@ class zed_streamer(Node):
                 img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="bgr8")
                 
                 
-                cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
+                # cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
+                cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH_U16_MM)
                 depth_value = depth_mat.get_data().astype(np.uint16)
                 depth_msg = bridge.cv2_to_imgmsg(depth_value)
+                print("depth_value: ", depth_value.shape, np.min(depth_value), np.max(depth_value))
 
                 img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
                 depth_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()

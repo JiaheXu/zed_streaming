@@ -23,9 +23,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'zed_streaming_rgbd = zed_streaming.zed_streaming_rgbd:main',
+            'zed_streaming_rgbd = zed_streaming.zed_stream_ros2_rgbd:main',
             'zed_streaming_rgb = zed_streaming.zed_stream_ros2_rgb:main',
-            'zed_streaming_rgb_pcd = zed_streaming.zed_streaming_rgb_pcd:main',
+            'zed_streaming_rgb_pcd = zed_streaming.zed_stream_ros2_rgb_pcd:main',
         ],
     },
 )
