@@ -187,7 +187,8 @@ class zed_streamer(Node):
         win_name = "Camera Remote Control"
         
         mat = sl.Mat()
-        depth_mat = sl.Mat()
+        depth_mat = sl.Mat(1920, 1080, sl.MAT_TYPE.U16_C1, sl.MEM.CPU)
+
         
         # cv2.namedWindow(win_name)
         # cv2.setMouseCallback(win_name,on_mouse)
@@ -211,10 +212,11 @@ class zed_streamer(Node):
                 img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="bgr8")
                 print("cvImage: ", cvImage.shape)
                 
-                cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
+                cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH_U16_MM)
+
                 depth_value = depth_mat.get_data().astype(np.uint16)
                 print("depth_value: ", depth_value.shape)
-
+                print("value: ", np.min(depth_value), np.max(depth_value))
                 current_data = {}
                 current_data['bgr'] = cvImage
                 current_data['depth'] = depth_value
