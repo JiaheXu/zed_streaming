@@ -162,7 +162,7 @@ def visualize_pcd(pcd):
 
 def main():
     
-    data = np.load("./success.npy", allow_pickle = True)
+    data = np.load("./test.npy", allow_pickle = True)
 
     cam_extrinsic = get_transform( [-0.13913296, 0.053, 0.43643044], [-0.63127772, 0.64917582, -0.31329509, 0.28619116])
     o3d_intrinsic = o3d.camera.PinholeCameraIntrinsic(1920, 1080, 734.1779174804688, 734.1779174804688, 993.6226806640625, 551.8895874023438)
@@ -170,19 +170,21 @@ def main():
     for point in data:
         bgr = point['bgr']
         rgb = bgr[...,::-1].copy()
-        depth = point['depth']
-        im_color = o3d.geometry.Image(rgb)
-        im_depth = o3d.geometry.Image(depth)
-        rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-            im_color, im_depth, depth_scale=1000, depth_trunc=2000, convert_rgb_to_intensity=False)
-        final_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-                rgbd,
-                o3d_intrinsic
-        )
-        # final_pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-        final_pcd.transform( cam_extrinsic )
-        # o3d.visualization.draw_geometries([final_pcd])
-        visualize_pcd(final_pcd)
+        xyz = point['xyz']/1000.0
+        xyz = xyz.reshape(-1,3)
+        print("xyz: ", xyz.shape)
+
+        rgb = rgb.reshape(-1,3)
+        rgb = rgb.astype(float)
+        bgr = bgr.reshape(-1,3)
+        print("rgb: ", rgb.shape)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(xyz)
+        pcd.colors = o3d.utility.Vector3dVector(rgb/255.0)
+        print(pcd)
+        # o3d.visualization.draw_geometries([pcd])
+        
+        # visualize_pcd(final_pcd)
 
 
 if __name__ == "__main__":

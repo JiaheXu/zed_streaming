@@ -1,27 +1,34 @@
-#!/usr/bin/env python
-"""
-Inputs a Joy messages and produces controls
-that match the control_interface
-"""
-import rclpy
-from rclpy.node import Node
+########################################################################
+#
+# Copyright (c) 2022, STEREOLABS.
+#
+# All rights reserved.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+########################################################################
 
-import time
-import math
-from geometry_msgs.msg import PointStamped, TwistStamped, Quaternion, Vector3
-from std_msgs.msg import UInt8, Bool, String
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
-from std_msgs.msg import String, Float32, Int8, UInt8, Bool, UInt32MultiArray, Int32
-
+"""
+    Read a stream and display the left images using OpenCV
+"""
 import sys
 import pyzed.sl as sl
 import cv2
 import argparse
 import socket 
 import numpy as np
-
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+import time
+# import ogl_viewer.viewer as gl
 
 
 camera_settings = sl.VIDEO_SETTINGS.BRIGHTNESS
@@ -32,8 +39,7 @@ selection_rect = sl.Rect()
 select_in_progress = False
 origin_rect = (-1,-1 )
 
-bridge = CvBridge() 
-
+     
 def on_mouse(event,x,y,flags,param):
     global select_in_progress,selection_rect,origin_rect
     if event == cv2.EVENT_LBUTTONDOWN:
@@ -50,6 +56,79 @@ def on_mouse(event,x,y,flags,param):
         selection_rect.y = min(y,origin_rect[1])
         selection_rect.width = abs(x-origin_rect[0])+1
         selection_rect.height = abs(y-origin_rect[1])+1
+
+def main():
+    init_parameters = sl.InitParameters()
+    init_parameters.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
+    init_parameters.coordinate_units = sl.UNIT.MILLIMETER 
+
+    init_parameters.sdk_verbose = 1
+    init_parameters.set_from_stream(opt.ip_address.split(':')[0],int(opt.ip_address.split(':')[1]))
+    cam = sl.Camera()
+    status = cam.open(init_parameters)
+    if status != sl.ERROR_CODE.SUCCESS:
+        print("Camera Open : "+repr(status)+". Exit program.")
+        exit()
+    runtime = sl.RuntimeParameters()
+    win_name = "Camera Remote Control"
+    mat = sl.Mat()
+
+    res = sl.Resolution()
+    point_cloud = sl.Mat(res.width, res.height, sl.MAT_TYPE.F32_C4, sl.MEM.CPU)
+    
+    camera_model = cam.get_camera_information().camera_model
+    # Create OpenGL viewer
+    # viewer = gl.GLViewer()
+    # viewer.init(1, sys.argv, camera_model, res)
+    
+    cv2.namedWindow(win_name)
+    cv2.setMouseCallback(win_name,on_mouse)
+    print_camera_information(cam)
+    print_help()
+    switch_camera_settings()
+    
+    current_stack = []
+
+    key = ''
+    while key != 113:  # for 'q' key
+        err = cam.grab(runtime) #Check that a new image is successfully acquired
+        if err == sl.ERROR_CODE.SUCCESS:
+            cam.retrieve_image(mat, sl.VIEW.LEFT) #Retrieve left image
+            
+            cvImage = mat.get_data()
+            cvImage = cvImage[:,:,:3]
+            
+            cam.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA,sl.MEM.CPU, res)
+            err, point_cloud_value = point_cloud.get_value(960, 540)
+
+            point_cloud_xyz = point_cloud.get_data()[:, :, 0:3]
+            print("point_cloud_xyz: ", point_cloud_xyz.shape, point_cloud_xyz[960, 540])
+            print("bgr: ", cvImage.shape, cvImage[960, 540])
+            # print("point_cloud_value: ", point_cloud_value)
+            
+            current_data = {}
+            current_data['bgr'] = cvImage
+            current_data['xyz'] = point_cloud_xyz
+
+            current_stack.append(current_data)
+            if(len(current_stack) > 10):
+                now = time.time()
+                np.save( str(now), current_stack)
+                break
+            
+            if (not selection_rect.is_empty() and selection_rect.is_contained(sl.Rect(0,0,cvImage.shape[1],cvImage.shape[0]))):
+                cv2.rectangle(cvImage,(selection_rect.x,selection_rect.y),(selection_rect.width+selection_rect.x,selection_rect.height+selection_rect.y),(220, 180, 20), 2)
+            cv2.imshow(win_name, cvImage)
+        else:
+            print("Error during capture : ", err)
+            break
+        key = cv2.waitKey(5)
+        update_camera_settings(key, cam, runtime, mat)
+    cv2.destroyAllWindows()
+    cam.close()
+
+
+
 def print_camera_information(cam):
     cam_info = cam.get_camera_information()
     print("ZED Model                 : {0}".format(cam_info.camera_model))
@@ -158,104 +237,10 @@ def valid_ip_or_hostname(ip_or_hostname):
         raise argparse.ArgumentTypeError("Invalid IP address or hostname format. Use format a.b.c.d:p or hostname:p")
 
   
-class zed_streamer(Node):
-    
-    def __init__(self):
-        super().__init__('zed_stream_to_ros_node')
-
-        self.declare_parameter('ip_address', '192.168.0.34:3000')
-        self.ip_address = self.get_parameter('ip_address').get_parameter_value().string_value
-
-        self.image_pub = self.create_publisher(Image, "left_image", 1)
-        # self.image_pub = self.create_publisher(String, "left_image", 1)
-        self.depth_pub = self.create_publisher(Image, "depth", 1)
-
-    def run(self):
-        init_parameters = sl.InitParameters()
-        init_parameters.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
-        init_parameters.coordinate_units = sl.UNIT.MILLIMETER
-        init_parameters.depth_maximum_distance = 2.0
-        init_parameters.depth_minimum_distance = 0.3
-        init_parameters.sdk_verbose = 1
-        init_parameters.set_from_stream( self.ip_address.split(':')[0],int(  self.ip_address.split(':')[1]))
-        cam = sl.Camera()
-        status = cam.open(init_parameters)
-        if status != sl.ERROR_CODE.SUCCESS:
-            print("Camera Open : "+repr(status)+". Exit program.")
-            exit()
-        runtime = sl.RuntimeParameters()
-        win_name = "Camera Remote Control"
-        
-        mat = sl.Mat()
-        depth_mat = sl.Mat(1920, 1080, sl.MAT_TYPE.U16_C1, sl.MEM.CPU)
-
-        
-        # cv2.namedWindow(win_name)
-        # cv2.setMouseCallback(win_name,on_mouse)
-        print_camera_information(cam)
-        print_help()
-        switch_camera_settings()
-        current_stack = []
-        key = ''
-        while True:
-            if key == 113:  # for 'q' key
-                now = time.time()
-                np.save( str(now), current_stack)
-                break
-            err = cam.grab(runtime) #Check that a new image is successfully acquired
-            if err == sl.ERROR_CODE.SUCCESS:
-
-                cam.retrieve_image(mat, sl.VIEW.LEFT) #Retrieve left image
-                timestamp = cam.get_timestamp(sl.TIME_REFERENCE.IMAGE)
-                cvImage = mat.get_data()
-                cvImage = cvImage[:,:,:3]
-                img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="bgr8")
-                print("cvImage: ", cvImage.shape)
-                
-                cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH_U16_MM)
-
-                depth_value = depth_mat.get_data().astype(np.uint16)
-                print("depth_value: ", depth_value.shape)
-                print("value: ", np.min(depth_value), np.max(depth_value))
-                current_data = {}
-                current_data['bgr'] = cvImage
-                current_data['depth'] = depth_value
-
-                current_stack.append(current_data)
-
-                depth_msg = bridge.cv2_to_imgmsg(depth_value)
-                img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
-                depth_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
-
-                # print("ros2 time: ", img_msg.header.stamp)
-                self.image_pub.publish(img_msg)
-                self.depth_pub.publish(depth_msg)
-
-                if (not selection_rect.is_empty() and selection_rect.is_contained(sl.Rect(0,0,cvImage.shape[1],cvImage.shape[0]))):
-                    cv2.rectangle(cvImage,(selection_rect.x,selection_rect.y),(selection_rect.width+selection_rect.x,selection_rect.height+selection_rect.y),(220, 180, 20), 2)
-                # cv2.imshow(win_name, cvImage)
-            else:
-                print("Error during capture : ", err)
-                break
-            key = cv2.waitKey(5)
-            update_camera_settings(key, cam, runtime, mat)
-
-         
-
-        # cv2.destroyAllWindows()
-
-        cam.close()
-        
-
-
-def main(args=None):
-
-    rclpy.init(args=args)
-    node = zed_streamer()
-    node.run()
- 
-    node.destroy_node()
-    rclpy.shutdown()
-
-if __name__ == '__main__':
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ip_address', type=valid_ip_or_hostname, help='IP address or hostname of the sender. Should be in format a.b.c.d:p or hostname:p', required=True)
+    opt = parser.parse_args()
     main()
+
+
