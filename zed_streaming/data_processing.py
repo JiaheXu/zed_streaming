@@ -184,7 +184,7 @@ def main():
         print(pcd)
         # o3d.visualization.draw_geometries([pcd])
         
-        # visualize_pcd(final_pcd)
+        visualize_pcd(pcd)
 
 
 if __name__ == "__main__":
