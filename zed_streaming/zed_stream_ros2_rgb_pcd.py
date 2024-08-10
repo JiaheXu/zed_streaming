@@ -171,9 +171,12 @@ class zed_streamer(Node):
 
     def run(self):
         init_parameters = sl.InitParameters()
-        init_parameters.depth_mode = sl.DEPTH_MODE.NONE
+        init_parameters.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
+        init_parameters.coordinate_units = sl.UNIT.MILLIMETER 
+
         init_parameters.sdk_verbose = 1
         init_parameters.set_from_stream( self.ip_address.split(':')[0],int(  self.ip_address.split(':')[1]))
+        
         cam = sl.Camera()
         status = cam.open(init_parameters)
         if status != sl.ERROR_CODE.SUCCESS:
@@ -183,55 +186,58 @@ class zed_streamer(Node):
         win_name = "Camera Remote Control"
         
         mat = sl.Mat()
-        depth_mat = sl.Mat()
+        res = sl.Resolution()
+        point_cloud = sl.Mat(res.width, res.height, sl.MAT_TYPE.F32_C4, sl.MEM.CPU)
         
-        # cv2.namedWindow(win_name)
-        # cv2.setMouseCallback(win_name,on_mouse)
+        camera_model = cam.get_camera_information().camera_model
+        # Create OpenGL viewer
+        # viewer = gl.GLViewer()
+        # viewer.init(1, sys.argv, camera_model, res)
+        
+        cv2.namedWindow(win_name)
+        cv2.setMouseCallback(win_name,on_mouse)
         print_camera_information(cam)
         print_help()
         switch_camera_settings()
+        
+        current_stack = []
 
         key = ''
-        while True:
-            if key == 113:  # for 'q' key
-                break
+        while key != 113:  # for 'q' key
             err = cam.grab(runtime) #Check that a new image is successfully acquired
             if err == sl.ERROR_CODE.SUCCESS:
                 cam.retrieve_image(mat, sl.VIEW.LEFT) #Retrieve left image
-                timestamp = cam.get_timestamp(sl.TIME_REFERENCE.IMAGE)
+                
                 cvImage = mat.get_data()
                 cvImage = cvImage[:,:,:3]
-                img_msg = bridge.cv2_to_imgmsg(cvImage, encoding="bgr8")
                 
-                
-                point_cloud = sl.Mat()
-                zed.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA)
-                point3D = point_cloud.get_value(i, j)
-                x = point3D[0]
-                y = point3D[1]
-                z = point3D[2]
-                color = point3D[3]
-                
-                img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
-                # depth_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
+                cam.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA,sl.MEM.CPU, res)
+                err, point_cloud_value = point_cloud.get_value(960, 540)
 
-                # print("ros2 time: ", img_msg.header.stamp)
-                self.image_pub.publish(img_msg)
-                # self.depth_pub.publish(depth_msg)
+                point_cloud_xyz = point_cloud.get_data()[:, :, 0:3]
+                print("point_cloud_xyz: ", point_cloud_xyz.shape, point_cloud_xyz[960, 540])
+                print("bgr: ", cvImage.shape, cvImage[960, 540])
+                # print("point_cloud_value: ", point_cloud_value)
+                
+                current_data = {}
+                current_data['bgr'] = cvImage
+                current_data['xyz'] = point_cloud_xyz
 
+                current_stack.append(current_data)
+                if(len(current_stack) > 10):
+                    now = time.time()
+                    # np.save( str(now), current_stack)
+                    break
+                
                 if (not selection_rect.is_empty() and selection_rect.is_contained(sl.Rect(0,0,cvImage.shape[1],cvImage.shape[0]))):
                     cv2.rectangle(cvImage,(selection_rect.x,selection_rect.y),(selection_rect.width+selection_rect.x,selection_rect.height+selection_rect.y),(220, 180, 20), 2)
-                # cv2.imshow(win_name, cvImage)
+                cv2.imshow(win_name, cvImage)
             else:
                 print("Error during capture : ", err)
                 break
             key = cv2.waitKey(5)
             update_camera_settings(key, cam, runtime, mat)
-
-         
-
-        # cv2.destroyAllWindows()
-
+        cv2.destroyAllWindows()
         cam.close()
         
 
