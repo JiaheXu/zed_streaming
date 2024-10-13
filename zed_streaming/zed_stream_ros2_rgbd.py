@@ -175,7 +175,7 @@ class zed_streamer(Node):
         init_parameters.depth_mode = sl.DEPTH_MODE.NEURAL_PLUS
         init_parameters.coordinate_units = sl.UNIT.MILLIMETER
         # init_parameters.depth_maximum_distance = 2000 # 2m
-        # init_parameters.depth_minimum_distance = 300 # 0.3m
+        init_parameters.depth_minimum_distance = 300 # 0.3m
         init_parameters.sdk_verbose = 1
         init_parameters.set_from_stream( self.ip_address.split(':')[0],int(  self.ip_address.split(':')[1]))
         cam = sl.Camera()
@@ -212,6 +212,7 @@ class zed_streamer(Node):
                 # cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH) #Retrieve depth image
                 cam.retrieve_measure(depth_mat, sl.MEASURE.DEPTH_U16_MM)
                 depth_value = depth_mat.get_data().astype(np.uint16)
+                # print("depth_value: ", depth_value[540, 960])
                 depth_msg = bridge.cv2_to_imgmsg(depth_value, encoding = "mono16")
 
                 img_msg.header.stamp = rclpy.time.Time(seconds=timestamp.get_seconds(), nanoseconds=timestamp.get_nanoseconds()%1000000000).to_msg()
