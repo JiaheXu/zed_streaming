@@ -35,6 +35,7 @@ from std_msgs.msg import String, Float32, Int8, UInt8, Bool, UInt32MultiArray, I
 from sensor_msgs.msg import PointCloud2, PointField
 # import sensor_msgs.point_cloud2 as pc2
 import sensor_msgs_py.point_cloud2 as pc2
+from sklearn.neighbors import NearestNeighbors
 from ctypes import * # convert float to uint32
 # The data structure of each point in ros PointCloud2: 16 bits = x + y + z + rgb
 FIELDS_XYZ = [
@@ -214,6 +215,7 @@ class zed_streamer(Node):
         # self.master_cam_t.transform.rotation.w = 0.2819945
 
         # Todo: use yaml files
+        self.bound_box = np.array( [ [0.05, 0.65], [ -0.5 , 0.5], [ -0.1 , 0.6] ] )
         self.cam_extrinsic = self.get_transform( [-0.13913296, 0.053, 0.43643044, -0.63127772, 0.64917582, -0.31329509, 0.28619116])
         self.o3d_intrinsic = o3d.camera.PinholeCameraIntrinsic(1920, 1080, 734.1779174804688, 734.1779174804688, 993.6226806640625, 551.8895874023438)
 
@@ -240,6 +242,30 @@ class zed_streamer(Node):
         t[:3, :3] = Rotation.from_quat( quat ).as_matrix()
         t[:3, 3] = trans
         return t
+
+    def xyz_from_depth(self, depth_image, depth_intrinsic, depth_extrinsic, depth_scale=1000.):
+        # Return X, Y, Z coordinates from a depth map.
+        # This mimics OpenCV cv2.rgbd.depthTo3d() function
+        fx = depth_intrinsic[0, 0]
+        fy = depth_intrinsic[1, 1]
+        cx = depth_intrinsic[0, 2]
+        cy = depth_intrinsic[1, 2]
+        # Construct (y, x) array with pixel coordinates
+        y, x = np.meshgrid(range(depth_image.shape[0]), range(depth_image.shape[1]), sparse=False, indexing='ij')
+
+        X = (x - cx) * depth_image / (fx * depth_scale)
+        Y = (y - cy) * depth_image / (fy * depth_scale)
+        ones = np.ones( ( depth_image.shape[0], depth_image.shape[1], 1) )
+        xyz = np.stack([X, Y, depth_image / depth_scale], axis=2)
+        xyz[depth_image == 0] = 0.0
+
+        # print("xyz: ", xyz.shape)
+        # print("ones: ", ones.shape)
+        # print("depth_extrinsic: ", depth_extrinsic.shape)
+        xyz = np.concatenate([xyz, ones], axis=2)
+        xyz =  xyz @ np.transpose( depth_extrinsic)
+        xyz = xyz[:,:,0:3]
+        return xyz
 
     # Convert the datatype of point cloud from Open3D to ROS PointCloud2 (XYZRGB only)
     def convertCloudFromOpen3dToRos(self, open3d_cloud, frame_id="world"):
@@ -296,6 +322,72 @@ class zed_streamer(Node):
         processed_depth = cv2.resize(cropped_depth, resized_img_size, interpolation =cv2.INTER_NEAREST)
 
         return processed_rgb, processed_depth
+
+    def denoise(self, rgb, xyz, debug = False):
+
+        start = time.time()
+        x = xyz[:,:,0]
+        z = xyz[:,:,2]
+        # print("minz: ", np.min(z))
+        valid_idx = np.where( (z > -0.08) & (x > 0.05))
+        # print("points: ", len( valid_idx[0]))
+        if(len( valid_idx[0]) < 10):
+            return rgb, xyz
+
+        test_xyz = xyz [ valid_idx ]
+        X = test_xyz.reshape(-1,3)
+
+        nbrs = NearestNeighbors(n_neighbors=3, algorithm='ball_tree').fit(X)
+        distances, indices = nbrs.kneighbors(X)
+        distances = distances[:,2]
+        invalid_idx = np.where(distances > 0.01)
+        
+        if( len(valid_idx[0]) < 10):
+            return rgb, xyz
+
+        xs = valid_idx[0]
+        ys = valid_idx[1]
+
+        xs = xs[invalid_idx]
+        ys = ys[invalid_idx]    
+        rgb[xs,ys] = np.array([0., 0., 0.])
+        xyz[xs,ys] = np.array([0., 0., 0.])
+        end = time.time()
+        if(debug):
+            print("time cost: ", end - start)
+        
+        return rgb, xyz
+    def cropping(self, rgb, xyz, bound_box, label = None, return_image = True):
+
+        x = xyz[:,:,0]
+        y = xyz[:,:,1]
+        z = xyz[:,:,2]
+
+        # print("bound_box: ", bound_box)
+        valid_idx = np.where( (x>=bound_box[0][0]) & (x <=bound_box[0][1]) & (y>=bound_box[1][0]) & (y<=bound_box[1][1]) & (z>=bound_box[2][0]) & (z<=bound_box[2][1]) )
+
+        if(return_image):
+
+            cropped_rgb = np.zeros(rgb.shape)
+            cropped_xyz = np.zeros(xyz.shape) 
+            cropped_rgb[valid_idx] = rgb[valid_idx]
+            cropped_xyz[valid_idx] = xyz[valid_idx]
+
+            return cropped_rgb, cropped_xyz
+
+        valid_xyz = xyz[valid_idx]
+        valid_rgb = rgb[valid_idx]
+        valid_label = None
+        if(label is not None):
+            valid_label = label[valid_idx]
+                
+        valid_pcd = o3d.geometry.PointCloud()
+        valid_pcd.points = o3d.utility.Vector3dVector( valid_xyz)
+        if(np.max(valid_rgb) > 1.0):
+            valid_pcd.colors = o3d.utility.Vector3dVector( valid_rgb/255.0 )
+        else:
+            valid_pcd.colors = o3d.utility.Vector3dVector( valid_rgb )
+        return valid_xyz, valid_rgb, valid_label, valid_pcd
 
     def run(self):
         init_parameters = sl.InitParameters()
@@ -355,27 +447,27 @@ class zed_streamer(Node):
                 ###############################################
                 # point cloud
                 ###############################################
-                bgr_np = np.array(self.bridge.imgmsg_to_cv2(img_msg))[:,:,:3]
-                depth_np = np.array(self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding="mono16"))
+                # bgr_np = np.array(self.bridge.imgmsg_to_cv2(img_msg))[:,:,:3]
+                # depth_np = np.array(self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding="mono16"))
 
-                rgb, depth = self.image_process(bgr_np, 
-                                                depth_np, 
-                                                self.o3d_intrinsic.intrinsic_matrix, 
-                                                self.original_image_size, 
-                                                self.resized_intrinsic_o3d.intrinsic_matrix,
-                                                self.resized_image_size 
-                                                )
-                im_color = o3d.geometry.Image(rgb)
-                im_depth = o3d.geometry.Image(depth)
-                rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-                    im_color, im_depth, depth_scale=1000, depth_trunc=2000, convert_rgb_to_intensity=False)
-                original_pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-                        rgbd,
-                        self.resized_intrinsic_o3d
-                    )
-                original_pcd = original_pcd.transform( self.cam_extrinsic )
-                pcd_msg = self.convertCloudFromOpen3dToRos(original_pcd, frame_id="world")
-                self.pcd_publisher.publish(pcd_msg)
+                # rgb, depth = self.image_process(bgr_np, 
+                #                                 depth_np, 
+                #                                 self.o3d_intrinsic.intrinsic_matrix, 
+                #                                 self.original_image_size, 
+                #                                 self.resized_intrinsic_o3d.intrinsic_matrix,
+                #                                 self.resized_image_size 
+                #                                 )
+                
+                # xyz = self.xyz_from_depth(depth, self.resized_intrinsic_o3d.intrinsic_matrix, self.cam_extrinsic )
+                # filtered_rgb, filtered_xyz = self.cropping( rgb, xyz, self.bound_box)
+                # valid_pcd = o3d.geometry.PointCloud()
+                # filtered_xyz = filtered_xyz.reshape(-1,3)
+                # filtered_rgb = (filtered_rgb/255.0).reshape(-1,3)
+                # valid_pcd.points = o3d.utility.Vector3dVector( filtered_xyz )
+                # valid_pcd.colors = o3d.utility.Vector3dVector( filtered_rgb )
+
+                # pcd_msg = self.convertCloudFromOpen3dToRos(valid_pcd, frame_id="world")
+                # self.pcd_publisher.publish(pcd_msg)
 
             else:
                 print("Error during capture : ", err)
